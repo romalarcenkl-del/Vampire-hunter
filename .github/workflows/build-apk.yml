@@ -22,28 +22,60 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      # Папка проекта: ищем ту, где лежит vite.config.ts
       - name: Fix project for standalone build
+        env:
+          VITE_CONFIG: |
+            import { defineConfig } from "vite";
+            import react from "@vitejs/plugin-react";
+            import tailwindcss from "@tailwindcss/vite";
+            import path from "path";
+            export default defineConfig({
+              base: "/",
+              plugins: [react(), tailwindcss()],
+              resolve: {
+                alias: { "@": path.resolve(import.meta.dirname, "src") },
+                dedupe: ["react", "react-dom"],
+              },
+              build: { outDir: "dist", emptyOutDir: true },
+            });
+          PATCH_JS: |
+            const fs = require("fs");
+            const p = JSON.parse(fs.readFileSync("package.json"));
+            const v = {"vite":"^7.0.0","@vitejs/plugin-react":"^5.0.0","tailwindcss":"^4.1.0","@tailwindcss/vite":"^4.1.0","react":"^19.1.0","react-dom":"^19.1.0","@types/react":"^19.1.0","@types/react-dom":"^19.1.0","@types/node":"^22.0.0","@tanstack/react-query":"^5.60.0","framer-motion":"^11.18.0","lucide-react":"^0.468.0","clsx":"^2.1.1","tailwind-merge":"^3.0.0","class-variance-authority":"^0.7.1","zod":"^3.25.0"};
+            for (const k of Object.keys(p.devDependencies)) {
+              const x = p.devDependencies[k];
+              if (k.startsWith("@replit/") || x.startsWith("workspace:")) delete p.devDependencies[k];
+              else if (x === "catalog:") p.devDependencies[k] = v[k] || "latest";
+            }
+            fs.writeFileSync("package.json", JSON.stringify(p, null, 2));
         run: |
           APP=$(dirname "$(find . -name vite.config.ts -not -path '*/node_modules/*' | head -1)")
           echo "APP=$APP" >> $GITHUB_ENV
           cd "$APP"
-          cat > vite.config.ts <<'VITE'
-          import { defineConfig } from "vite";
-          import react from "@vitejs/plugin-react";
-          import tailwindcss from "@tailwindcss/vite";
-          import path from "path";
-          export default defineConfig({
-            base: "/",
-            plugins: [react(), tailwindcss()],
-            resolve: {
-              alias: { "@": path.resolve(import.meta.dirname, "src") },
-              dedupe: ["react", "react-dom"],
-            },
-            build: { outDir: "dist", emptyOutDir: true },
-          });
-          VITE
-          node -e '
-          const fs=require("fs");
-          const p=JSON.parse(fs.readFileSync("package.json"));
-          const v={"vite":"^7.0.0","@vitejs/plugin-react":"^5.0.0","tailwindcss":"^4.1.0","@tailwindcss/vite":"^4.1.0","react":"^19.1.0","react-dom":"^19.1.0","@types/react":"^19.1.0","@types/react-dom":"^19.1.0","@types/node":"^22.0.0","@tanstack/react-query":"^5.60.0","framer-motion":"^11.18.0","lucide-react":"^0.468.0","clsx":"^2.1.1","tailwind-merge":"^3.0.0","class-variance-authority":"^0.7.1","zod":"^3.25.0"};
-          for(const k of Object.keys(p.devDepend
+          printf '%s\n' "$VITE_CONFIG" > vite.config.ts
+          node -e "$PATCH_JS"
+          rm -f pnpm-lock.yaml
+
+      - name: Build web
+        working-directory: ${{ env.APP }}
+        run: |
+          npm install --legacy-peer-deps
+          npx vite build
+
+      - name: Add Android (Capacitor)
+        working-directory: ${{ env.APP }}
+        run: |
+          npm install --legacy-peer-deps @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
+          npx cap init "Vampire Forest Hunt" com.bzden.vampireforest --web-dir=dist
+          npx cap add android
+          npx cap sync android
+
+      - name: Build APK
+        working-directory: ${{ env.APP }}/android
+        run: ./gradlew assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: ${{ env.APP }}/android/app/build/outputs/apk/debug/app-debug.apk

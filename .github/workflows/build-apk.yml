@@ -39,6 +39,23 @@ jobs:
               },
               build: { outDir: "dist", emptyOutDir: true },
             });
+          TSCONFIG: |
+            {
+              "include": ["src/**/*"],
+              "compilerOptions": {
+                "target": "ES2022",
+                "module": "ESNext",
+                "noEmit": true,
+                "jsx": "react-jsx",
+                "lib": ["esnext", "dom", "dom.iterable"],
+                "skipLibCheck": true,
+                "resolveJsonModule": true,
+                "allowImportingTsExtensions": true,
+                "moduleResolution": "bundler",
+                "types": ["vite/client"],
+                "paths": { "@/*": ["./src/*"] }
+              }
+            }
           PATCH_JS: |
             const fs = require("fs");
             const p = JSON.parse(fs.readFileSync("package.json"));
@@ -54,6 +71,7 @@ jobs:
           echo "APP=$APP" >> $GITHUB_ENV
           cd "$APP"
           printf '%s\n' "$VITE_CONFIG" > vite.config.ts
+          printf '%s\n' "$TSCONFIG" > tsconfig.json
           node -e "$PATCH_JS"
           rm -f pnpm-lock.yaml
 
@@ -79,3 +97,4 @@ jobs:
         with:
           name: app-debug-apk
           path: ${{ env.APP }}/android/app/build/outputs/apk/debug/app-debug.apk
+          
